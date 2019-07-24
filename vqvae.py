@@ -17,7 +17,6 @@ import sonnet as snt
 import tensorflow as tf
 
 from six.moves import xrange
-from astropy.io import fits
 
 #timer starts
 Tstart = time.time()
