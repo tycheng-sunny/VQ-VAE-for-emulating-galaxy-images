@@ -15,7 +15,9 @@
  ```
   I run 200000 epochs on CPU which costs me ~5-6hrs on my MacBook Pro. (GPU will speed up more)
   The data is from CANDELS (GOODS, h band).
-  ![](https://github.com/tycheng-sunny/Project_Kavli_UCSC_2019/blob/master/result_plots/reconstruction_200000.png)
+  
+  <img src="https://github.com/tycheng-sunny/Project_Kavli_UCSC_2019/blob/master/result_plots/reconstruction_200000.png" width=400 align=center>
+  
   ![](https://github.com/tycheng-sunny/Project_Kavli_UCSC_2019/blob/master/result_plots/loss_200000.png)
   
 #### Add noise/PSF layers
