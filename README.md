@@ -9,7 +9,7 @@
  We modified the [VQ-VAE example](https://github.com/deepmind/sonnet/blob/master/sonnet/examples/vqvae_example.ipynb) ([Source code of VQ-VAE](https://github.com/deepmind/sonnet/blob/master/sonnet/python/modules/nets/vqvae.py)) from Sonnet library.
  
 ## Preliminary results
-#### VQ-VAE code on CANDELS data
+### VQ-VAE code on CANDELS data
  ```
  $python vqvae.py
  ```
@@ -22,7 +22,7 @@
   
   ![](https://github.com/tycheng-sunny/Project_Kavli_UCSC_2019/blob/master/result_plots/loss_200000.png)
   
-#### Add noise/PSF layers
+### Add noise/PSF layers
   ```
   $python vqvae_noise+psf.py
   ```
