@@ -25,20 +25,17 @@
 ### Add noise/PSF layers
   ```
   $python vqvae_noise+psf.py
-  ```
-  Th below result is that I added **only noise layer** and run 200000 epochs.
-  ![](https://github.com/tycheng-sunny/Project_Kavli_UCSC_2019/blob/master/result_plots/reconstruction_noise_200000.jpg)
-  ![](https://github.com/tycheng-sunny/Project_Kavli_UCSC_2019/blob/master/result_plots/loss_noise200000.png)
-  
-  Then I added **both noise and PSF layers** in the Decoder:
-  I run 100000 epochs for this example only on CPU which costs me ~3-4hrs on my MacBook Pro.
+  ```  
+  I added **noise and PSF layers** in the Decoder and run 100000 epochs for this example only on CPU which costs me ~3-4hrs on my MacBook Pro.
   The data is from CANDELS (GOODS, h band), and the PSF image is from [3DHST](https://3dhst.research.yale.edu/Data.php) (GOODS-S WFC3 PSFs, F160W).
   
-  However, the process converges faster than the previous two processes. Not sure about what causes this situation.
+  The process converges much faster than the previous process.
   
   ![](https://github.com/tycheng-sunny/Project_Kavli_UCSC_2019/blob/master/result_plots/reconstruction_noise+psf_100000.jpg)
   ![](https://github.com/tycheng-sunny/Project_Kavli_UCSC_2019/blob/master/result_plots/loss_noise+psf_100000.png)
   
+  The convolution test is shown below:
+  ![](https://github.com/tycheng-sunny/Project_Kavli_UCSC_2019/blob/master/result_plots/reconstruction_noise%2Bpsf_reconfirm.png)
  
 ## To-do list
  - [x] Adapt the VQ-VAE code to astronomical images (e.g. CANDELS)
