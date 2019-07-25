@@ -159,7 +159,7 @@ batch_size = 4
 image_size = 84
 
 # 100k steps should take < 30 minutes on a modern (>= 2017) GPU.
-num_training_updates = 10 #epoch
+num_training_updates = 200000 #epoch
 
 num_hiddens = 128
 num_residual_hiddens = 32
@@ -305,9 +305,9 @@ valid_originals = get_images(sess, subset='valid')
 valid_reconstructions = sess.run(x_recon_eval, feed_dict={x: valid_originals})
 
 def convert_batch_to_image_grid(image_batch):
-    reshaped = (image_batch.reshape(2, 2, 84, 84)
+    reshaped = (image_batch.reshape(2, 2, image_size, image_size) # batch_size and image_size
                 .transpose(0, 2, 1, 3)
-                .reshape(2 * 84, 2 * 84))
+                .reshape(2 * image_size, 2 * image_size))
     return reshaped + 0.5
 
 # Plot the results
