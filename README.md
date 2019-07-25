@@ -40,6 +40,7 @@
 ## To-do list
  - [x] Adapt the VQ-VAE code to astronomical images (e.g. CANDELS)
  - [x] Add noise/PSF layers before output and retrieve the reconstructed images from the layer before noise/PSF layers
+ - [ ] t-SNE to explore the meaning of quantized vector and compare with galaxy properties
  - [ ] Download the images fro 3DHST/CANDELS and cropping them (currently using the CANDELS data from Ryan)
  - [ ] Modifiy the architecture to have better output of encoder to adapt to generative models
  - [ ] Connect with PixelCNN to generate random galaxy images
