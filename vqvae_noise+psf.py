@@ -24,9 +24,10 @@ Tstart = time.time()
 
 ### Data Preparation ###
 ## path
-local_data_dir = 'data/'
-train_data_fn = 'h_train_noise+psf.dict'
-valid_data_fn = 'h_valid_noise+psf.dict'
+local_data_dir = 'CANDELS_GDS_from_Ryan/'
+train_data_fn = 'h_train_noise+psf_tmp.dict'
+valid_data_fn = 'h_valid_noise+psf_tmp.dict'
+savemodel_fn = 'vqvae_model/vqvae_noise+psf.ckpt'
 
 ## hyper-parameters for data
 image_size = 84
@@ -172,11 +173,13 @@ class Decoder(snt.AbstractModule):
 ### MAIN ###
 tf.reset_default_graph()
 
+# Train mode
+Train = False # True: training a new model and save the model. False: reloading the pretrained model
 # Set hyper-parameters.
 batch_size = 4
 image_size = 84
 # 100k steps should take < 30 minutes on a modern (>= 2017) GPU.
-num_training_updates = 100000 #epoch
+num_training_updates = 100 #epoch
 
 num_hiddens = 128
 num_residual_hiddens = 32
@@ -290,36 +293,51 @@ perplexity = vq_output_train["perplexity"]
 # Create optimizer and TF session.
 optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
 train_op = optimizer.minimize(loss)
+saver = tf.train.Saver()
 sess = tf.train.SingularMonitoredSession()
 
-# Train.
-train_res_recon_error = []
-train_res_perplexity = []
-for i in xrange(num_training_updates):
-    feed_dict = {x: get_images(sess), x_sigma: get_noise(sess)}
-    results = sess.run(
-              [train_op, recon_error, perplexity],
-              feed_dict=feed_dict)
-    train_res_recon_error.append(results[1])
-    train_res_perplexity.append(results[2])
+# Special adapted code for saving model when using MonitoredSession() # Don't know why yet...
+def get_session(sess):
+    session = sess
+    while type(session).__name__ != 'Session':
+        #pylint: disable=W0212
+        session = session._sess
+    return session
 
-    if (i+1) % 100 == 0:
-        print('%d iterations' % (i+1))
-        print('recon_error: %.3f' % np.mean(train_res_recon_error[-100:]))
-        print('perplexity: %.3f' % np.mean(train_res_perplexity[-100:]))
-        print()
+# set the Train mode. If Train=True: do training and save the model, Train=False: reloading the pre-trained model
+if Train:
+    # Train.
+    train_res_recon_error = []
+    train_res_perplexity = []
+    for i in xrange(num_training_updates):
+        feed_dict = {x: get_images(sess), x_sigma: get_noise(sess)}
+        results = sess.run(
+                  [train_op, recon_error, perplexity],
+                  feed_dict=feed_dict)
+        train_res_recon_error.append(results[1])
+        train_res_perplexity.append(results[2])
+                           
+        if (i+1) % 100 == 0:
+            #saver.save(sess, 'vqvae_model/model', global_step=i+1)
+            print('%d iterations' % (i+1))
+            print('recon_error: %.3f' % np.mean(train_res_recon_error[-100:]))
+            print('perplexity: %.3f' % np.mean(train_res_perplexity[-100:]))
+            print()
+    # Output reconstruction loss and average codebook usage
+    f = plt.figure(figsize=(16,8))
+    ax = f.add_subplot(1,2,1)
+    ax.plot(train_res_recon_error)
+    ax.set_yscale('log')
+    ax.set_title('NMSE.')
 
-# Output reconstruction loss and average codebook usage
-f = plt.figure(figsize=(16,8))
-ax = f.add_subplot(1,2,1)
-ax.plot(train_res_recon_error)
-ax.set_yscale('log')
-ax.set_title('NMSE.')
+    ax = f.add_subplot(1,2,2)
+    ax.plot(train_res_perplexity)
+    ax.set_title('Average codebook usage (perplexity).')
+    plt.savefig('loss_noise+psf.eps')
 
-ax = f.add_subplot(1,2,2)
-ax.plot(train_res_perplexity)
-ax.set_title('Average codebook usage (perplexity).')
-plt.savefig('loss.eps')
+    saver.save(get_session(sess), savemodel_fn)
+else:
+    saver.restore(sess, savemodel_fn)
 
 # Reconstructions
 de_layer = tf.get_default_graph().get_tensor_by_name("decoder/dec_3/BiasAdd:0") # retrieve the layer of reconstructed images without noise/PSF
@@ -378,7 +396,7 @@ ax.imshow(convert_batch_to_image_grid(valid_de_reconstructions),
 ax.set_title('validation data reconstructions without noise/psf')
 plt.axis('off')
 
-plt.savefig('reconstruction.eps')
+plt.savefig('reconstruction_noise+psf.eps')
 
 #timer
 print('\n', '## CODE RUNTIME:', time.time()-Tstart) #Timer end
