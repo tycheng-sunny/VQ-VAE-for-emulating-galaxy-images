@@ -34,7 +34,7 @@
   ![](https://github.com/tycheng-sunny/Project_Kavli_UCSC_2019/blob/master/result_plots/reconstruction_noise+psf_100000.jpg)
   ![](https://github.com/tycheng-sunny/Project_Kavli_UCSC_2019/blob/master/result_plots/loss_noise+psf_100000.png)
   
-  The convolution test is shown below that the last column shows the results after PSF convolution on the images of the third column:
+  The convolution test is shown below that the last column shows the results after PSF convolution on the images of the third column which use to confirm our reconstructed images at the second column:
   ![](https://github.com/tycheng-sunny/Project_Kavli_UCSC_2019/blob/master/result_plots/reconstruction_noise%2Bpsf_reconfirm.png)
   
 ### Connect with Gated PixelCNN
@@ -43,7 +43,7 @@
   - codebook (e): shape=(K,D), where K is the number of code and D is the dimension of the code.
   - encodings indice: shape=( , latent_size, latent_size, dtype=**int32**), where 'latent_size' means the size of latent map.
   
-  I followed the code from [hiwonjoon](https://github.com/hiwonjoon/tf-vqvae) which tried to reproduce the results of the paper - VQ-VAE [2](https://arxiv.org/pdf/1906.00446.pdf). They applied the code of [Gated PixelCNN](https://github.com/anantzoid/Conditional-PixelCNN-decoder/tree/9a5c9a3df2c58100cf5e3600392e67db8ac7a59e) on the vector quantized feature map extracted from VQ-VAE.
+  I followed the code from [hiwonjoon](https://github.com/hiwonjoon/tf-vqvae) which tried to reproduce the results of the paper - VQ-VAE ([2](https://arxiv.org/pdf/1906.00446.pdf)). They applied the code of [Gated PixelCNN](https://github.com/anantzoid/Conditional-PixelCNN-decoder/tree/9a5c9a3df2c58100cf5e3600392e67db8ac7a59e) on the vector quantized feature map extracted from VQ-VAE.
   
   I trained PixelCNN 50000 epoches, and sample the prior to generate new feature map. I then use the decoder from VQ-VAE to reconstruct new images from generated feature maps. (waiting for results...)
   
