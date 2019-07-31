@@ -26,6 +26,7 @@ Tstart = time.time()
 local_data_dir = 'data/'
 train_data_fn = 'h_train.dict'
 valid_data_fn = 'h_valid.dict'
+savemodel_fn = 'savemodels/vqvae/vqvae.ckpt'
 
 ## hyper-parameters for data
 image_size = 84
@@ -266,7 +267,16 @@ perplexity = vq_output_train["perplexity"]
 # Create optimizer and TF session.
 optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
 train_op = optimizer.minimize(loss)
+saver = tf.train.Saver()
 sess = tf.train.SingularMonitoredSession()
+
+# Special adapted code for saving model when using MonitoredSession() # Don't know why yet...
+def get_session(sess):
+    session = sess
+    while type(session).__name__ != 'Session':
+        #pylint: disable=W0212
+        session = session._sess
+    return session
 
 # Train.
 train_res_recon_error = []
@@ -296,6 +306,9 @@ ax = f.add_subplot(1,2,2)
 ax.plot(train_res_perplexity)
 ax.set_title('Average codebook usage (perplexity).')
 plt.savefig('loss.eps')
+
+# save the vqvae model
+saver.save(get_session(sess), savemodel_fn)
 
 # Reconstructions
 sess.run(valid_dataset_iterator.initializer)

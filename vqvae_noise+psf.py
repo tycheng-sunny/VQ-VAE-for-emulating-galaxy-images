@@ -1,5 +1,5 @@
 #===========================================================================================
-# A test code for playing around VQ-VAE
+# VQ-VAE implementation
 # _noise+psf: add noise/psf layer inside Decoder before output
 # ** Check if hyper-parameters are the value/info you want.
 #===========================================================================================
@@ -27,7 +27,7 @@ Tstart = time.time()
 local_data_dir = 'CANDELS_GDS_from_Ryan/'
 train_data_fn = 'h_train_noise+psf_tmp.dict'
 valid_data_fn = 'h_valid_noise+psf_tmp.dict'
-savemodel_fn = 'vqvae_model/vqvae_noise+psf.ckpt'
+savemodel_fn = 'savemodels/vqvae/vqvae_noise+psf.ckpt'
 
 ## hyper-parameters for data
 image_size = 84
