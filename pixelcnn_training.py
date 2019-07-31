@@ -75,16 +75,6 @@ def residual_stack(h, num_hiddens, num_residual_layers, num_residual_hiddens):
         h += h_i
     return tf.nn.relu(h)
 
-##psf layer
-def psf_layer(h, psf_imgs):
-    h = tf.expand_dims(tf.spectral.irfft2d(tf.spectral.rfft2d(h[:,:,:,0]) * tf.spectral.rfft2d(np.fft.fftshift(psf_imgs))), axis=-1)
-    return h
-
-##noise layer
-def noise_layer(h, noise_map):
-    h += noise_map
-    return h
-
 ##encoder
 class Encoder(snt.AbstractModule):
     def __init__(self, num_hiddens, num_residual_layers, num_residual_hiddens, name='encoder'):

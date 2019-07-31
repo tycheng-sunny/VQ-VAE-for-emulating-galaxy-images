@@ -24,7 +24,7 @@ Tstart = time.time()
 
 ### Data Preparation ###
 ## path
-local_data_dir = 'CANDELS_GDS_from_Ryan/'
+local_data_dir = 'data/'
 train_data_fn = 'h_train_noise+psf_tmp.dict'
 valid_data_fn = 'h_valid_noise+psf_tmp.dict'
 savemodel_fn = 'savemodels/vqvae/vqvae_noise+psf.ckpt'
