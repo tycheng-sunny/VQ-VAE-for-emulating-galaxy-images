@@ -9,6 +9,7 @@
  We modified the [VQ-VAE example](https://github.com/deepmind/sonnet/blob/master/sonnet/examples/vqvae_example.ipynb) ([Source code of VQ-VAE](https://github.com/deepmind/sonnet/blob/master/sonnet/python/modules/nets/vqvae.py)) from Sonnet library.
  
 ## Preliminary results
+**@NOTE: Need to assign an output directory when use codes here!!**
 ### VQ-VAE code on CANDELS data
  ```
  $python vqvae.py
@@ -17,10 +18,10 @@
   The data is from CANDELS (GOODS, h band).
   
   <p align="center">
-  <img src="https://github.com/tycheng-sunny/Project_Kavli_UCSC_2019/blob/master/result_plots/reconstruction_200000.png" width=400>
+  <img src="https://github.com/tycheng-sunny/Project_Kavli_UCSC_2019/blob/master/images/reconstruction_200000.png" width=400>
   </p>
   
-  ![](https://github.com/tycheng-sunny/Project_Kavli_UCSC_2019/blob/master/result_plots/loss_200000.png)
+  ![](https://github.com/tycheng-sunny/Project_Kavli_UCSC_2019/blob/master/images/loss_200000.png)
   
 ### Add noise/PSF layers
   ```
@@ -31,11 +32,11 @@
   
   The process converges much faster than the previous process.
   
-  ![](https://github.com/tycheng-sunny/Project_Kavli_UCSC_2019/blob/master/result_plots/reconstruction_noise+psf_100000.jpg)
-  ![](https://github.com/tycheng-sunny/Project_Kavli_UCSC_2019/blob/master/result_plots/loss_noise+psf_100000.png)
+  ![](https://github.com/tycheng-sunny/Project_Kavli_UCSC_2019/blob/master/images/reconstruction_noise+psf_100000.jpg)
+  ![](https://github.com/tycheng-sunny/Project_Kavli_UCSC_2019/blob/master/images/loss_noise+psf_100000.png)
   
   The convolution test is shown below that the last column shows the results after PSF convolution on the images of the third column which use to confirm our reconstructed images at the second column:
-  ![](https://github.com/tycheng-sunny/Project_Kavli_UCSC_2019/blob/master/result_plots/reconstruction_noise%2Bpsf_reconfirm.png)
+  ![](https://github.com/tycheng-sunny/Project_Kavli_UCSC_2019/blob/master/images/reconstruction_noise%2Bpsf_reconfirm.png)
   
 ### Connect with Gated PixelCNN
   In this section, I trained [Gated PixelCNN](https://arxiv.org/pdf/1606.05328.pdf) on vector quantized feature map. After implementing VQVAE, we will have two outputs from VQVAE which are the inputs for PixelCNN:
