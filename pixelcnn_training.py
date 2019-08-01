@@ -284,7 +284,7 @@ tf.reset_default_graph()
 batch_size = 16
 train_num = 50000 # need GPU for training
 learning_rate = 3e-4
-decay_steps = 100000
+decay_steps = 25000 # half of training number
 decay_val = 0.5
 decay_staircase = False
 grad_clip = 5.0
