@@ -12,7 +12,7 @@
 **@NOTE: Need to assign an output directory when using codes**
 ### VQ-VAE code on CANDELS data
  ```
-  $python image_to_dict.py
+ $python image_to_dict.py
  ```  
   This code is used to generate a dictionary to store images.
   
@@ -50,15 +50,19 @@
   
   I followed the code from [hiwonjoon](https://github.com/hiwonjoon/tf-vqvae) which tried to reproduce the results of the paper - VQ-VAE ([2](https://arxiv.org/pdf/1906.00446.pdf)). They applied the code of [Gated PixelCNN](https://github.com/anantzoid/Conditional-PixelCNN-decoder/tree/9a5c9a3df2c58100cf5e3600392e67db8ac7a59e) on the vector quantized feature map extracted from VQ-VAE.
   
-  I trained PixelCNN 100000 epoches on both CANDELS (84x84) (~7000 images) and SDSS (64x64) (~170000 images), and sample the prior to generate new feature map. I then use the decoder from VQ-VAE to reconstruct new images from generated feature maps.
+  I trained PixelCNN (**unconditional**) 100000 epoches on both CANDELS (84x84) (~7000 images) and SDSS (64x64) (~170000 images), and sample the prior to generate new feature map. I then use the decoder from VQ-VAE to reconstruct new images from generated feature maps.
   
   - CANDELS result
-  ![](https://github.com/tycheng-sunny/Project_Kavli_UCSC_2019/blob/master/images/generated_imgs_pixelcnn_candels_100000.png)
+  <p align="center">
+  <img src="https://github.com/tycheng-sunny/Project_Kavli_UCSC_2019/blob/master/images/generated_imgs_pixelcnn_candels_100000.png" width=400>
+  </p>
   
   - CANDELS result (deconvolution and denoise)
 
   - SDSS result (K=512)
-  ![](https://github.com/tycheng-sunny/Project_Kavli_UCSC_2019/blob/master/images/generated_imgs_pixelcnn_sdss_100000.png)
+  <p align="center">
+  <img src="https://github.com/tycheng-sunny/Project_Kavli_UCSC_2019/blob/master/images/generated_imgs_pixelcnn_sdss_100000.png" width=400>
+  </p>
   
 ### Unsupervised clustering
  
