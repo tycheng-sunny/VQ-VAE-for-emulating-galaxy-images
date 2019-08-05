@@ -1,6 +1,5 @@
 #===========================================================================================
 # Sampling the prior from pre-trained PixelCNN to generate new images
-# Add only PSF layer in the decoder for generating images.
 # ** Check if hyper-parameters are the value/info you want.
 #===========================================================================================
 from __future__ import print_function
@@ -9,7 +8,7 @@ import time
 import os
 import sys
 import pickle
-#os.environ["CUDA_VISIBLE_DEVICES"]="0" # for GPU
+#os.environ["CUDA_VISIBLE_DEVICES"]="3" # for GPU
 
 #import matplotlib as mpl
 #mpl.use('Agg') # to use matplotlib without visualisation envs
@@ -27,10 +26,10 @@ Tstart = time.time()
 ### Data Preparation ###
 ## path
 local_data_dir = 'data/'
-train_data_fn = 'h_train_noise+psf_tmp.dict'
-valid_data_fn = 'h_valid_noise+psf_tmp.dict'
-savemodel_vqvae_fn = 'savemodels/vqvae/vqvae_noise+psf.ckpt'
-savemodel_pixecnn_fn = 'savemodels/pixelcnn/last-pixelcnn.ckpt'
+output_PATH = 'output/' # path for output results
+data_fn = 'data.dict' # input data filename
+savemodel_vqvae_fn = 'savemodels/vqvae/vqvae_candels.ckpt' # vqvae model name
+savemodel_pixecnn_fn = 'savemodels/pixelcnn/last-pixelcnn.ckpt' # pixelcnn model saving directory
 
 ## hyper-parameters for data
 image_size = 84
@@ -46,14 +45,11 @@ def reshape_flattened_image_batch(flat_image_batch):
 
 def combine_batches(batch_list):
     images = np.vstack([reshape_flattened_image_batch(batch_list['images'])])
-    noise = np.vstack([reshape_flattened_image_batch(batch_list['noise'])])
-    psf = np.vstack([np.array(batch_list['psf'])])
     fn = np.vstack([np.array(batch_list['filename'])]).reshape(-1, 1)
     id = np.vstack([np.array(batch_list['id'])]).reshape(-1, 1)
-    return {'images': images, 'filename': fn, 'id': id, 'noise': noise, 'psf': psf}
+    return {'images': images, 'filename': fn, 'id': id}
 
-train_data_dict = combine_batches(unpickle(os.path.join(local_data_dir, train_data_fn)))
-valid_data_dict = combine_batches(unpickle(os.path.join(local_data_dir, valid_data_fn)))
+data_dict = combine_batches(unpickle(os.path.join(local_data_dir, data_fn)))
 
 ### Encoder & Decoder architecture ###
 ##residual
@@ -75,16 +71,6 @@ def residual_stack(h, num_hiddens, num_residual_layers, num_residual_hiddens):
               name="res1x1_%d" % i)(h_i)
         h += h_i
     return tf.nn.relu(h)
-
-##psf layer
-def psf_layer(h, psf_imgs):
-    h = tf.expand_dims(tf.spectral.irfft2d(tf.spectral.rfft2d(h[:,:,:,0]) * tf.spectral.rfft2d(np.fft.fftshift(psf_imgs))), axis=-1)
-    return h
-
-##noise layer
-#def noise_layer(h, noise_map):
-#    h += noise_map
-#    return h
 
 ##encoder
 class Encoder(snt.AbstractModule):
@@ -130,7 +116,7 @@ class Decoder(snt.AbstractModule):
         self._num_residual_layers = num_residual_layers
         self._num_residual_hiddens = num_residual_hiddens
 
-    def _build(self, x, x_psf):
+    def _build(self, x):
         h = snt.Conv2D(
             output_channels=self._num_hiddens,
             kernel_shape=(3, 3),
@@ -151,18 +137,12 @@ class Decoder(snt.AbstractModule):
             name="dec_2")(h)
         h = tf.nn.relu(h)
         
-        """ x_recon_de: reconstructed images without noise and PSF
-            x_recon: output to calculate the reconstructed loss """
-        x_recon_de = snt.Conv2DTranspose(
+        x_recon = snt.Conv2DTranspose(
                   output_channels=1,
                   output_shape=None,
                   kernel_shape=(4, 4),
                   stride=(2, 2),
                   name="dec_3")(h)
-        print(x_recon_de)
-        # add a PSF convolution layer and noise layer
-        x_recon = psf_layer(x_recon_de, x_psf)
-        #x_recon = noise_layer(x_recon_de, x_sigma)
         
         return x_recon
 
@@ -295,6 +275,7 @@ decay = 0.99
 
 # Build modules.
 encoder = Encoder(num_hiddens, num_residual_layers, num_residual_hiddens)
+decoder = Decoder(num_hiddens, num_residual_layers, num_residual_hiddens)
 pre_vq_conv1 = snt.Conv2D(
                           output_channels=embedding_dim,
                           kernel_shape=(1, 1),
@@ -315,8 +296,6 @@ else:
 
 # Process inputs with conv stack, finishing with 1x1 to get to correct size.
 x = tf.placeholder(tf.float32, shape=(None, image_size, image_size, 1))
-x_sigma = tf.placeholder(tf.float32, shape=(None, image_size, image_size, 1))
-x_psf = train_data_dict['psf'][0] # PSF image is the same
 z = pre_vq_conv1(encoder(x))
 
 vq_output_train = vq_vae(z, is_training=False)
@@ -328,17 +307,13 @@ sess = tf.train.SingularMonitoredSession()
 saver.restore(sess, savemodel_vqvae_fn) # load vqvae pre-trained model
 
 ### Pixel CNN ###
-# retrieve the input for PixelCNN
-embeds = sess.run(vq_output_embeds, feed_dict={x: train_data_dict['images'], x_sigma: train_data_dict['noise']})
+# codebook
+embeds = sess.run(vq_output_embeds, feed_dict={x: data_dict['images'][:2]})
 embeds = np.transpose(embeds) # change tthe shape from [D,K] to [K,D]
-embeds_indice_4_imgs = sess.run(vq_output_train["encoding_indices"], feed_dict={x: train_data_dict['images'], x_sigma: train_data_dict['noise']})
 
 # set hyper-parameter
-batch_size = 4
-decay_steps = 100000
-decay_val = 0.5
-decay_staircase = False
-latent_size = np.shape(embeds_indice_4_imgs)[1] # the shape of latent map is (latent_size, latent_size)
+batch_size = 16
+latent_size = 21 # the shape of latent map is (latent_size, latent_size)
 num_layers = 18
 num_feature_maps = latent_size* latent_size
 K, D = np.shape(embeds)[0], np.shape(embeds)[1] # K=num_embeddings, D=embedding_dim
@@ -363,42 +338,40 @@ pixelcnn_net.load(sess, savemodel_pixecnn_fn)
 coord = tf.train.Coordinator()
 threads = tf.train.start_queue_runners(coord=coord, sess=sess)
 
-# Sample from the prior & generate new images
+# Sample from the prior
 sampled_zs, log_probs = pixelcnn_net.sample_from_prior(sess, None, batch_size)
+sampled_ims = sess.run(gen, feed_dict={x_cnn:sampled_zs})
 
-decoder = Decoder(num_hiddens, num_residual_layers, num_residual_hiddens)
-x_recon_psf = train_data_dict['psf'][0] # PSF image is the same
-x_recon_new = decoder(gen, x_recon_psf)
-de_layer = tf.get_default_graph().get_tensor_by_name("decoder/dec_3/BiasAdd:0") # retrieve the layer of reconstructed images without noise/PSF
-with tf.train.SingularMonitoredSession() as sess:
-    x_recontruction_new = sess.run(x_recon_new, feed_dict={x_cnn:sampled_zs})
-    x_de_reconstructions = sess.run(de_layer, feed_dict={x_cnn:sampled_zs})
+# VQVAE decoder for generating new images from sampled_zs
+tf.reset_default_graph()
 
-    print(np.shape(x_recontruction_new))
-    print(np.shape(x_de_reconstructions))
+x_sampled = tf.placeholder(tf.float32, [None, latent_size, latent_size, embedding_dim])
+x_recon_new = decoder(x_sampled)
+
+# Create TF session for vqvae
+saver = tf.train.Saver()
+sess = tf.train.SingularMonitoredSession()
+saver.restore(sess, savemodel_vqvae_fn) # load vqvae pre-trained model
+
+x_recontruction_new = sess.run(x_recon_new, feed_dict={x_sampled: sampled_ims})
+print(np.shape(x_recontruction_new))
 
 # reshape images to show
 def convert_batch_to_image_grid(image_batch):
-    reshaped = (image_batch.reshape(2, 2, image_size, image_size) # batch_size and image_size
+    reshaped = (image_batch.reshape(4, 4, image_size, image_size) # batch_size and image_size
                 .transpose(0, 2, 1, 3)
-                .reshape(2 * image_size, 2 * image_size))
+                .reshape(4 * image_size, 4 * image_size))
     return reshaped + 0.5
 
 # Plot the results
 f = plt.figure(figsize=(16,8))
-ax = f.add_subplot(1,2,1)
+ax = f.add_subplot(1,1,1)
 ax.imshow(convert_batch_to_image_grid(x_recontruction_new),
           interpolation='nearest', cmap='gray_r')
 ax.set_title('Generated images')
 plt.axis('off')
 
-ax = f.add_subplot(1,2,2)
-ax.imshow(convert_batch_to_image_grid(x_de_reconstructions),
-          interpolation='nearest', cmap='gray_r')
-ax.set_title('Without noise/psf')
-plt.axis('off')
-
-plt.savefig('generated_imgs.jpg')
+plt.savefig(output_PATH + 'generated_imgs_pixelcnn.eps')
 
 #timer
 print('\n', '## CODE RUNTIME:', time.time()-Tstart) #Timer end

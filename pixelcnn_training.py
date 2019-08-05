@@ -25,11 +25,11 @@ Tstart = time.time()
 
 ### Data Preparation ###
 ## path
-local_data_dir = 'data/'
-train_data_fn = 'h_train_noise+psf.dict'
-valid_data_fn = 'h_valid_noise+psf.dict'
-savemodel_vqvae_fn = 'savemodels/vqvae/vqvae_noise+psf.ckpt'
-savemodel_pixecnn_fn = 'savemodels/pixelcnn/'
+local_data_dir = 'data/' # path to input data
+output_PATH = 'output/' # path for output results
+data_fn = 'data.dict' # input data filename
+savemodel_vqvae_fn = 'savemodels/vqvae/vqvae_candels.ckpt' # vqvae model name
+savemodel_pixecnn_fn = 'savemodels/pixelcnn/' # pixelcnn model saving directory
 
 ## hyper-parameters for data
 image_size = 84
@@ -38,21 +38,18 @@ channel_size = 1
 ## load data into Numpy
 def unpickle(filename):
     with open(filename, 'rb') as fo:
-        return pickle.load(fo, encoding='latin1')
+        return pickle.load(fo)
 
 def reshape_flattened_image_batch(flat_image_batch):
     return flat_image_batch.reshape(-1, image_size, image_size, 1)  # convert to NHWC
 
 def combine_batches(batch_list):
     images = np.vstack([reshape_flattened_image_batch(batch_list['images'])])
-    noise = np.vstack([reshape_flattened_image_batch(batch_list['noise'])])
-    psf = np.vstack([np.array(batch_list['psf'])])
     fn = np.vstack([np.array(batch_list['filename'])]).reshape(-1, 1)
     id = np.vstack([np.array(batch_list['id'])]).reshape(-1, 1)
-    return {'images': images, 'filename': fn, 'id': id, 'noise': noise, 'psf': psf}
+    return {'images': images, 'filename': fn, 'id': id}
 
-train_data_dict = combine_batches(unpickle(os.path.join(local_data_dir, train_data_fn)))
-valid_data_dict = combine_batches(unpickle(os.path.join(local_data_dir, valid_data_fn)))
+data_dict = combine_batches(unpickle(os.path.join(local_data_dir, data_fn)))
 
 ### Encoder & Decoder architecture ###
 ##residual
@@ -119,7 +116,7 @@ class PixelCNN(object):
                  is_training=True):
         sys.path.append('pixelcnn')
         from layers import GatedCNN
-        self.X = tf.placeholder(tf.int32, [None, size, size]) # input extracted feature map that each pixel is labeled by k
+        self.X = tf.placeholder(tf.int64, [None, size, size]) # input extracted feature map that each pixel is labeled by k
         
         if( num_classes is not None ):
             """ conditional PixelCNN which can conditionally do training when given labels """
@@ -260,8 +257,6 @@ else:
 
 # Process inputs with conv stack, finishing with 1x1 to get to correct size.
 x = tf.placeholder(tf.float32, shape=(None, image_size, image_size, 1))
-x_sigma = tf.placeholder(tf.float32, shape=(None, image_size, image_size, 1))
-x_psf = train_data_dict['psf'][0] # PSF image is the same
 z = pre_vq_conv1(encoder(x))
 
 vq_output_train = vq_vae(z, is_training=False)
@@ -273,18 +268,31 @@ sess = tf.train.SingularMonitoredSession()
 saver.restore(sess, savemodel_vqvae_fn) # load vqvae pre-trained model
 
 ### Pixel CNN ###
-# retrieve the input for PixelCNN
-embeds = sess.run(vq_output_embeds, feed_dict={x: train_data_dict['images'], x_sigma: train_data_dict['noise']})
+# retrieve the input for PixelCNN sequentially
+N = 5000 # run N each time
+runN = len(data_dict["id"])// N
+for i in range(runN):
+    if i == 0:
+        embeds_indice_4_imgs = sess.run(vq_output_train["encoding_indices"], feed_dict={x: data_dict['images'][i*N: (i+1)*N]})
+    else:
+        tmp = sess.run(vq_output_train["encoding_indices"], feed_dict={x: data_dict['images'][i*N: (i+1)*N]})
+        embeds_indice_4_imgs = np.concatenate((embeds_indice_4_imgs, tmp), axis=0)
+
+tmp = sess.run(vq_output_train["encoding_indices"], feed_dict={x: data_dict['images'][runN* N:]})
+embeds_indice_4_imgs = np.concatenate((embeds_indice_4_imgs, tmp), axis=0)
+print('Shape of input: ', np.shape(embeds_indice_4_imgs))
+
+# codebook
+embeds = sess.run(vq_output_embeds, feed_dict={x: data_dict['images'][:2]})
 embeds = np.transpose(embeds) # change tthe shape from [D,K] to [K,D]
-embeds_indice_4_imgs = sess.run(vq_output_train["encoding_indices"], feed_dict={x: train_data_dict['images'], x_sigma: train_data_dict['noise']})
 
 # Reset the graph
 tf.reset_default_graph()
 # Set hyper-parameter
-batch_size = 16
-train_num = 50000 # need GPU for training
+batch_size = 32 # training
+train_num = 100000 # need GPU for training
 learning_rate = 3e-4
-decay_steps = 25000 # half of training number
+decay_steps = 50000 # half of training number
 decay_val = 0.5
 decay_staircase = False
 grad_clip = 5.0
@@ -294,15 +302,31 @@ num_feature_maps = latent_size* latent_size
 K, D = np.shape(embeds)[0], np.shape(embeds)[1] # K=num_embeddings, D=embedding_dim
 
 # Save frequency
-save_period = 2
-summary_period = 2
+save_period = 10000 # save model
+summary_period = 100
 
 # Data loading
-train_dataset_iterator = (tf.data.Dataset.from_tensor_slices(embeds_indice_4_imgs)
-                          .shuffle(10000)
-                          .repeat(-1)  # repeat indefinitely
-                          .batch(batch_size)).make_one_shot_iterator()
-train_dataset_batch = train_dataset_iterator.get_next()
+def decode_and_get_images(x):
+    x = x.decode('utf-8')
+    data = np.array(embeds_indice_4_imgs[np.where(data_dict["id"] == x)[0][0]])
+    return data
+
+def load(x):
+    x = x.numpy()
+    x = np.array(list(map(decode_and_get_images, x))) # feature map size (21, 21)
+    return x
+
+def loader(y):
+    imgs = tf.py_function(load, [y], tf.int64)
+    imgs = tf.cast(imgs, tf.int64)
+    return imgs[0]
+
+train_paths = tf.data.Dataset.from_tensor_slices(data_dict["id"]) # load the id
+train_dset = train_paths.map(loader)
+
+train_dset = train_dset.repeat(-1).shuffle(10000).batch(batch_size)
+train_iterator = train_dset.make_one_shot_iterator()
+train_dataset_batch = train_iterator.get_next()
 
 def get_features(sess):
     return sess.run(train_dataset_batch)
@@ -363,6 +387,7 @@ finally :
     coord.join(threads)
 
     plt.plot(itarr, lossarr)
-    plt.savefig('loss.png')
+    plt.savefig(output_PATH + 'loss_pixelcnn.eps')
 #timer
+
 print('\n', '## CODE RUNTIME:', time.time()-Tstart) #Timer end

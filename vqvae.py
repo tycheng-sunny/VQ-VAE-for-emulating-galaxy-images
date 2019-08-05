@@ -1,5 +1,5 @@
 #===========================================================================================
-# A test code using VQ-VAE on CANDELS images
+# VQ-VAE implementation
 # ** Check if hyper-parameters are the value/info you want.
 #===========================================================================================
 from __future__ import print_function
@@ -7,7 +7,7 @@ from __future__ import print_function
 import time
 import os
 import pickle
-#os.environ["CUDA_VISIBLE_DEVICES"]="0" # for GPU
+#os.environ["CUDA_VISIBLE_DEVICES"]="1" # for GPU
 
 #import matplotlib as mpl
 #mpl.use('Agg') # to use matplotlib without visualisation envs
@@ -23,39 +23,35 @@ Tstart = time.time()
 
 ### Data Preparation ###
 ## path
-local_data_dir = 'data/'
-train_data_fn = 'h_train.dict'
-valid_data_fn = 'h_valid.dict'
-savemodel_fn = 'savemodels/vqvae/vqvae.ckpt'
+local_data_dir = 'data/' # path to input data
+output_PATH = 'output/' # path for output results
+data_fn = 'data_candels.dict' # input data filename
+savemodel_vqvae_fn = 'savemodels/vqvae/vqvae_candels.ckpt' # vqvae model name
 
 ## hyper-parameters for data
-image_size = 84
+ori_image_size = 84
 channel_size = 1
 
 ## load data into Numpy
 def unpickle(filename):
     with open(filename, 'rb') as fo:
-        return pickle.load(fo, encoding='latin1')
+        return pickle.load(fo)
 
 def reshape_flattened_image_batch(flat_image_batch):
-    return flat_image_batch.reshape(-1, image_size, image_size, channel_size)  # convert to NHWC
+    return flat_image_batch.reshape(-1, ori_image_size, ori_image_size, channel_size)  # convert to NHWC
 
 def combine_batches(batch_list):
     images = np.vstack([reshape_flattened_image_batch(batch_list['images'])])
-    fn = np.vstack([np.array(batch_list['filename'])]).reshape(-1, 1)
-    id = np.vstack([np.array(batch_list['id'])]).reshape(-1, 1)
+    fn = np.vstack([np.array(batch_list['filename'])]).reshape(-1,1)
+    id = np.vstack([np.array(batch_list['id'])]).reshape(-1,1)
     return {'images': images, 'filename': fn, 'id': id}
 
-train_data_dict = combine_batches(unpickle(os.path.join(local_data_dir, train_data_fn)))
-valid_data_dict = combine_batches(unpickle(os.path.join(local_data_dir, valid_data_fn)))
+data_dict = combine_batches(unpickle(os.path.join(local_data_dir, data_fn)))
+train_data_num = np.int(0.8* len(data_dict["id"])) # the number of training data # can change the ratio
+print('Number of training data:', train_data_num)
+print('Number of validation data:', (len(data_dict["id"]) - train_data_num))
 
-def cast_and_normalise_images(data_dict):
-    """ The pixels in each image has been normalised to range [0., 1.] when generating .dict file """
-    images = data_dict['images']
-    data_dict['images'] = tf.cast(images, tf.float32)
-    return data_dict
-
-data_variance = np.var(train_data_dict['images']) # for the normalisation of the reconstruction loss
+data_variance = np.var(data_dict['images'][:train_data_num]) # for the normalisation of the reconstruction loss
 
 ### Encoder & Decoder architecture ###
 ##residual
@@ -155,12 +151,14 @@ class Decoder(snt.AbstractModule):
 ### MAIN ###
 tf.reset_default_graph()
 
+# Train mode
+Train = True # True: training a new model and save the model. False: reloading the pretrained model
 # Set hyper-parameters.
-batch_size = 4
 image_size = 84
+batch_size = 32
 
 # 100k steps should take < 30 minutes on a modern (>= 2017) GPU.
-num_training_updates = 200000 #epoch
+num_training_updates = 100000 #epoch
 
 num_hiddens = 128
 num_residual_hiddens = 32
@@ -198,25 +196,49 @@ decay = 0.99
 learning_rate = 3e-4
 
 # Data Loading.
-train_dataset_iterator = (
-                          tf.data.Dataset.from_tensor_slices(train_data_dict)
-                          .map(cast_and_normalise_images)
-                          .shuffle(10000)
-                          .repeat(-1)  # repeat indefinitely
-                          .batch(batch_size)).make_one_shot_iterator()
-valid_dataset_iterator = (
-                          tf.data.Dataset.from_tensor_slices(valid_data_dict)
-                          .map(cast_and_normalise_images)
-                          .repeat(1)  # 1 epoch
-                          .batch(batch_size)).make_initializable_iterator()
-train_dataset_batch = train_dataset_iterator.get_next()
-valid_dataset_batch = valid_dataset_iterator.get_next()
+def decode_and_get_image(x):
+    x = x.decode('utf-8')
+    data = np.array(data_dict["images"][np.where(data_dict["id"] == x)[0][0]])
+    return data
+
+def load(x):
+    x = x.numpy()
+    x = np.array(list(map(decode_and_get_image, x))) #images size = ori_image_size
+    #print(x)
+    #x = x[:,96:160,96:160]   #cropping images
+    #x = np.array(list(map(get_zoom,x))) #zoom to half size
+    return x
+
+def get_zoom(x):
+    x = zoom(x,0.5)
+    return x
+
+def loader(y):
+    imgs = tf.py_function(load, [y], tf.float32)
+    imgs = tf.cast(imgs, tf.float32)
+    return imgs[0]
+
+# training data
+train_paths = tf.data.Dataset.from_tensor_slices(data_dict["id"][:train_data_num]) # load the id
+train_dset = train_paths.map(loader)
+
+train_dset = train_dset.repeat(-1).shuffle(10000).batch(batch_size)
+train_iterator = train_dset.make_one_shot_iterator()
+train_dataset_batch = train_iterator.get_next()
+
+# validation data
+valid_paths = tf.data.Dataset.from_tensor_slices(data_dict["id"][train_data_num:])
+valid_dset = valid_paths.map(loader)
+
+valid_dset = valid_dset.repeat(1).batch(batch_size)
+valid_iterator = valid_dset.make_one_shot_iterator()
+valid_dataset_batch = valid_iterator.get_next()
 
 def get_images(sess, subset='train'):
     if subset == 'train':
-        return sess.run(train_dataset_batch)['images']
+        return sess.run(train_dataset_batch)
     elif subset == 'valid':
-        return sess.run(valid_dataset_batch)['images']
+        return sess.run(valid_dataset_batch)
 
 # Build modules.
 encoder = Encoder(num_hiddens, num_residual_layers, num_residual_hiddens)
@@ -278,40 +300,44 @@ def get_session(sess):
         session = session._sess
     return session
 
-# Train.
-train_res_recon_error = []
-train_res_perplexity = []
-for i in xrange(num_training_updates):
-    feed_dict = {x: get_images(sess)}
-    results = sess.run(
-              [train_op, recon_error, perplexity],
-              feed_dict=feed_dict)
-    train_res_recon_error.append(results[1])
-    train_res_perplexity.append(results[2])
+# set the Train mode. If Train=True: do training and save the model, Train=False: reloading the pre-trained model
+if Train:
+    # Train.
+    train_res_recon_error = []
+    train_res_perplexity = []
+    for i in xrange(num_training_updates):
+        feed_dict = {x: get_images(sess)}
+        results = sess.run(
+                  [train_op, recon_error, perplexity],
+                  feed_dict=feed_dict)
+        train_res_recon_error.append(results[1])
+        train_res_perplexity.append(results[2])
+                           
+        if (i+1) % 100 == 0:
+            #saver.save(sess, 'vqvae_model/model', global_step=i+1)
+            print('%d iterations' % (i+1))
+            print('recon_error: %.3f' % np.mean(train_res_recon_error[-100:]))
+            print('perplexity: %.3f' % np.mean(train_res_perplexity[-100:]))
+            print()
+    
+    saver.save(get_session(sess), savemodel_vqvae_fn)
+    # Output reconstruction loss and average codebook usage
+    f = plt.figure(figsize=(16,8))
+    ax = f.add_subplot(1,2,1)
+    ax.plot(train_res_recon_error)
+    ax.set_yscale('log')
+    ax.set_title('NMSE.')
 
-    if (i+1) % 100 == 0:
-        print('%d iterations' % (i+1))
-        print('recon_error: %.3f' % np.mean(train_res_recon_error[-100:]))
-        print('perplexity: %.3f' % np.mean(train_res_perplexity[-100:]))
-        print()
+    ax = f.add_subplot(1,2,2)
+    ax.plot(train_res_perplexity)
+    ax.set_title('Average codebook usage (perplexity).')
+    plt.savefig(output_PATH + 'loss.eps')
 
-# Output reconstruction loss and average codebook usage
-f = plt.figure(figsize=(16,8))
-ax = f.add_subplot(1,2,1)
-ax.plot(train_res_recon_error)
-ax.set_yscale('log')
-ax.set_title('NMSE.')
-
-ax = f.add_subplot(1,2,2)
-ax.plot(train_res_perplexity)
-ax.set_title('Average codebook usage (perplexity).')
-plt.savefig('loss.eps')
-
-# save the vqvae model
-saver.save(get_session(sess), savemodel_fn)
-
+else:
+    saver.restore(sess, savemodel_vqvae_fn)
+'''
 # Reconstructions
-sess.run(valid_dataset_iterator.initializer)
+#sess.run(valid_dataset_iterator.initializer)
 train_originals = get_images(sess, subset='train')
 train_reconstructions = sess.run(x_recon_eval, feed_dict={x: train_originals})
 valid_originals = get_images(sess, subset='valid')
@@ -327,28 +353,28 @@ def convert_batch_to_image_grid(image_batch):
 f = plt.figure(figsize=(16,8))
 ax = f.add_subplot(2,2,1)
 ax.imshow(convert_batch_to_image_grid(train_originals),
-          interpolation='nearest')
+          interpolation='nearest', cmap='gray_r')
 ax.set_title('training data originals')
 plt.axis('off')
 
 ax = f.add_subplot(2,2,2)
 ax.imshow(convert_batch_to_image_grid(train_reconstructions),
-          interpolation='nearest')
+          interpolation='nearest', cmap='gray_r')
 ax.set_title('training data reconstructions')
 plt.axis('off')
 
 ax = f.add_subplot(2,2,3)
 ax.imshow(convert_batch_to_image_grid(valid_originals),
-          interpolation='nearest')
+          interpolation='nearest', cmap='gray_r')
 ax.set_title('validation data originals')
 plt.axis('off')
 
 ax = f.add_subplot(2,2,4)
 ax.imshow(convert_batch_to_image_grid(valid_reconstructions),
-          interpolation='nearest')
+          interpolation='nearest', cmap='gray_r')
 ax.set_title('validation data reconstructions')
 plt.axis('off')
-plt.savefig('reconstruction.eps')
-
+plt.savefig(output_PATH + 'reconstruction.eps')
+'''
 #timer
 print('\n', '## CODE RUNTIME:', time.time()-Tstart) #Timer end

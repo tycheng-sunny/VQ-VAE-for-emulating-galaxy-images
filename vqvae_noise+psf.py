@@ -8,7 +8,7 @@ from __future__ import print_function
 import time
 import os
 import pickle
-#os.environ["CUDA_VISIBLE_DEVICES"]="0" # for GPU
+#os.environ["CUDA_VISIBLE_DEVICES"]="1" # for GPU
 
 #import matplotlib as mpl
 #mpl.use('Agg') # to use matplotlib without visualisation envs
@@ -24,22 +24,22 @@ Tstart = time.time()
 
 ### Data Preparation ###
 ## path
-local_data_dir = 'data/'
-train_data_fn = 'h_train_noise+psf_tmp.dict'
-valid_data_fn = 'h_valid_noise+psf_tmp.dict'
-savemodel_fn = 'savemodels/vqvae/vqvae_noise+psf.ckpt'
+local_data_dir = 'data/' # path to input data
+output_PATH = 'output/' # path for output results
+data_fn = 'data_candels_noise+psf.dict' # input data filename
+savemodel_vqvae_fn = 'savemodels/vqvae/vqvae_candels_noise+psf.ckpt' # vqvae model name
 
 ## hyper-parameters for data
-image_size = 84
+ori_image_size = 84
 channel_size = 1
 
 ## load data into Numpy
 def unpickle(filename):
     with open(filename, 'rb') as fo:
-        return pickle.load(fo, encoding='latin1')
+        return pickle.load(fo)
 
 def reshape_flattened_image_batch(flat_image_batch):
-    return flat_image_batch.reshape(-1, image_size, image_size, 1)  # convert to NHWC
+    return flat_image_batch.reshape(-1, ori_image_size, ori_image_size, channel_size)  # convert to NHWC
 
 def combine_batches(batch_list):
     images = np.vstack([reshape_flattened_image_batch(batch_list['images'])])
@@ -49,16 +49,16 @@ def combine_batches(batch_list):
     id = np.vstack([np.array(batch_list['id'])]).reshape(-1, 1)
     return {'images': images, 'filename': fn, 'id': id, 'noise': noise, 'psf': psf}
 
-train_data_dict = combine_batches(unpickle(os.path.join(local_data_dir, train_data_fn)))
-valid_data_dict = combine_batches(unpickle(os.path.join(local_data_dir, valid_data_fn)))
+data_dict = combine_batches(unpickle(os.path.join(local_data_dir, data_fn)))
+train_data_num = np.int(0.8* len(data_dict["id"])) # the number of training data # can change the ratio
+print('Number of training data:', train_data_num)
+print('Number of validation data:', (len(data_dict["id"]) - train_data_num))
 
-def cast_and_normalise_images(data_dict):
-    """ The pixels in each image has been normalised to range [0., 1.] when generating .dict file """
-    images = data_dict['images']
-    data_dict['images'] = tf.cast(images, tf.float32)
-    return data_dict
+# shift psf to do convolution
+data_dict["psf"] = np.fft.fftshift(data_dict["psf"])
 
-data_variance = np.var(train_data_dict['images']) # for the normalisation of the reconstruction loss
+# for the normalisation of the reconstruction loss
+data_variance = np.var(data_dict['images'][:train_data_num])
 
 ### Encoder & Decoder architecture ###
 ##residual
@@ -83,7 +83,7 @@ def residual_stack(h, num_hiddens, num_residual_layers, num_residual_hiddens):
 
 ##psf layer
 def psf_layer(h, psf_imgs):
-    h = tf.expand_dims(tf.spectral.irfft2d(tf.spectral.rfft2d(h[:,:,:,0]) * tf.spectral.rfft2d(np.fft.fftshift(psf_imgs))), axis=-1)
+    h = tf.expand_dims(tf.spectral.irfft2d(tf.spectral.rfft2d(h[:,:,:,0]) * tf.spectral.rfft2d(psf_imgs)), axis=-1)
     return h
 
 ##noise layer
@@ -167,19 +167,20 @@ class Decoder(snt.AbstractModule):
         # add a PSF convolution layer and noise layer
         x_recon_de = psf_layer(x_recon_de, x_psf)
         x_recon = noise_layer(x_recon_de, x_sigma)
-        
+                   
         return x_recon
 
 ### MAIN ###
 tf.reset_default_graph()
 
 # Train mode
-Train = False # True: training a new model and save the model. False: reloading the pretrained model
+Train = True # True: training a new model and save the model. False: reloading the pretrained model
 # Set hyper-parameters.
-batch_size = 4
 image_size = 84
+batch_size = 32
+
 # 100k steps should take < 30 minutes on a modern (>= 2017) GPU.
-num_training_updates = 100 #epoch
+num_training_updates = 100000 #epoch
 
 num_hiddens = 128
 num_residual_hiddens = 32
@@ -217,31 +218,88 @@ decay = 0.99
 learning_rate = 3e-4
 
 # Data Loading.
-train_dataset_iterator = (
-                          tf.data.Dataset.from_tensor_slices(train_data_dict)
-                          .map(cast_and_normalise_images)
-                          .shuffle(10000)
-                          .repeat(-1)  # repeat indefinitely
-                          .batch(batch_size)).make_one_shot_iterator()
-valid_dataset_iterator = (
-                          tf.data.Dataset.from_tensor_slices(valid_data_dict)
-                          .map(cast_and_normalise_images)
-                          .repeat(1)  # 1 epoch
-                          .batch(batch_size)).make_initializable_iterator()
-train_dataset_batch = train_dataset_iterator.get_next()
-valid_dataset_batch = valid_dataset_iterator.get_next()
+def decode_and_get_images(x):
+    x = x.decode('utf-8')
+    data = np.array(data_dict["images"][np.where(data_dict["id"] == x)[0][0]])
+    return data
+
+def decode_and_get_noise(x):
+    x = x.decode('utf-8')
+    data = np.array(data_dict["noise"][np.where(data_dict["id"] == x)[0][0]])
+    return data
+
+def decode_and_get_psf(x):
+    x = x.decode('utf-8')
+    data = np.array(data_dict["psf"][np.where(data_dict["id"] == x)[0][0]])
+    return data
+
+def load(x):
+    x = x.numpy()
+    x = np.array(list(map(decode_and_get_images, x))) #images size = ori_image_size
+    #x = x[:,96:160,96:160]   #cropping images
+    #x = np.array(list(map(get_zoom,x))) #zoom to half size
+    return x
+
+def load_noise(x):
+    x = x.numpy()
+    x = np.array(list(map(decode_and_get_noise, x))) #images size = ori_image_size
+    #x = x[:,96:160,96:160]   #cropping images
+    #x = np.array(list(map(get_zoom,x))) #zoom to half size
+    return x
+
+def load_psf(x):
+    x = x.numpy()
+    x = np.array(list(map(decode_and_get_psf, x))) #images size = ori_image_size
+    #x = x[:,96:160,96:160]   #cropping images
+    #x = np.array(list(map(get_zoom,x))) #zoom to half size
+    return x
+
+#def get_zoom(x):
+#    x = zoom(x,0.5)
+#    return x
+
+def loader(y):
+    imgs = tf.py_function(load, [y], tf.float32)
+    noise = tf.py_function(load_noise, [y], tf.float32)
+    psf = tf.py_function(load_psf, [y], tf.float32)
+    imgs = tf.cast(imgs, tf.float32)
+    noise = tf.cast(noise, tf.float32)
+    psf = tf.cast(psf, tf.float32)
+    return [imgs[0], noise[0], psf[0]]
+
+# data loading
+train_paths = tf.data.Dataset.from_tensor_slices(data_dict["id"][:train_data_num]) # load the id
+train_dset = train_paths.map(loader)
+
+train_dset = train_dset.repeat(-1).shuffle(10000).batch(batch_size)
+train_iterator = train_dset.make_one_shot_iterator()
+train_dataset_batch = train_iterator.get_next()
+
+# validation data
+valid_paths = tf.data.Dataset.from_tensor_slices(data_dict["id"][train_data_num:])
+valid_dset = valid_paths.map(loader)
+
+valid_dset = valid_dset.repeat(1).batch(batch_size)
+valid_iterator = valid_dset.make_one_shot_iterator()
+valid_dataset_batch = valid_iterator.get_next()
 
 def get_images(sess, subset='train'):
     if subset == 'train':
-        return sess.run(train_dataset_batch)['images']
+        return sess.run(train_dataset_batch[0])
     elif subset == 'valid':
-        return sess.run(valid_dataset_batch)['images']
+        return sess.run(valid_dataset_batch[0])
 
 def get_noise(sess, subset='train'):
     if subset == 'train':
-        return sess.run(train_dataset_batch)['noise']
+        return sess.run(train_dataset_batch[1])
     elif subset == 'valid':
-        return sess.run(valid_dataset_batch)['noise']
+        return sess.run(valid_dataset_batch[1])
+
+def get_psf(sess, subset='train'):
+    if subset == 'train':
+        return sess.run(train_dataset_batch[2])
+    elif subset == 'valid':
+        return sess.run(valid_dataset_batch[2])
 
 # Build modules.
 encoder = Encoder(num_hiddens, num_residual_layers, num_residual_hiddens)
@@ -267,8 +325,8 @@ else:
 # Process inputs with conv stack, finishing with 1x1 to get to correct size.
 x = tf.placeholder(tf.float32, shape=(None, image_size, image_size, 1))
 x_sigma = tf.placeholder(tf.float32, shape=(None, image_size, image_size, 1))
-x_psf = train_data_dict['psf'][0] # PSF image is the same
-z = pre_vq_conv1(encoder(x))
+x_psf = tf.placeholder(tf.float32, shape=(None, image_size, image_size))
+z = pre_vq_conv1(encoder(x)) #latent space
 
 # vq_output_train["quantize"] are the quantized outputs of the encoder.
 # That is also what is used during training with the straight-through estimator.
@@ -310,7 +368,7 @@ if Train:
     train_res_recon_error = []
     train_res_perplexity = []
     for i in xrange(num_training_updates):
-        feed_dict = {x: get_images(sess), x_sigma: get_noise(sess)}
+        feed_dict = {x: get_images(sess), x_sigma: get_noise(sess), x_psf: get_psf(sess)}
         results = sess.run(
                   [train_op, recon_error, perplexity],
                   feed_dict=feed_dict)
@@ -323,6 +381,8 @@ if Train:
             print('recon_error: %.3f' % np.mean(train_res_recon_error[-100:]))
             print('perplexity: %.3f' % np.mean(train_res_perplexity[-100:]))
             print()
+
+    saver.save(get_session(sess), savemodel_vqvae_fn)
     # Output reconstruction loss and average codebook usage
     f = plt.figure(figsize=(16,8))
     ax = f.add_subplot(1,2,1)
@@ -333,24 +393,25 @@ if Train:
     ax = f.add_subplot(1,2,2)
     ax.plot(train_res_perplexity)
     ax.set_title('Average codebook usage (perplexity).')
-    plt.savefig('loss_noise+psf.eps')
+    plt.savefig(output_PATH + 'loss_noise+psf.eps')
 
-    saver.save(get_session(sess), savemodel_fn)
 else:
-    saver.restore(sess, savemodel_fn)
+    saver.restore(sess, savemodel_vqvae_fn)
 
+'''
 # Reconstructions
 de_layer = tf.get_default_graph().get_tensor_by_name("decoder/dec_3/BiasAdd:0") # retrieve the layer of reconstructed images without noise/PSF
 
-sess.run(valid_dataset_iterator.initializer)
 train_originals = get_images(sess, subset='train')
 train_noise = get_noise(sess, subset='train')
-train_reconstructions = sess.run(x_recon_eval, feed_dict={x: train_originals, x_sigma: train_noise})
-train_de_reconstructions = sess.run(de_layer, feed_dict={x: train_originals, x_sigma: train_noise})
+train_psf = get_psf(sess, subset='train')
+train_reconstructions = sess.run(x_recon_eval, feed_dict={x: train_originals, x_sigma: train_noise, x_psf: train_psf})
+train_de_reconstructions = sess.run(de_layer, feed_dict={x: train_originals, x_sigma: train_noise, x_psf: train_psf})
 valid_originals = get_images(sess, subset='valid')
 valid_noise = get_noise(sess, subset='valid')
-valid_reconstructions = sess.run(x_recon_eval, feed_dict={x: valid_originals, x_sigma: valid_noise})
-valid_de_reconstructions = sess.run(de_layer, feed_dict={x: valid_originals, x_sigma: valid_noise})
+valid_psf = get_psf(sess, subset='valid')
+valid_reconstructions = sess.run(x_recon_eval, feed_dict={x: valid_originals, x_sigma: valid_noise, x_psf: train_psf})
+valid_de_reconstructions = sess.run(de_layer, feed_dict={x: valid_originals, x_sigma: valid_noise, x_psf: train_psf})
 
 def convert_batch_to_image_grid(image_batch):
     reshaped = (image_batch.reshape(2, 2, image_size, image_size) # batch_size and image_size
@@ -362,41 +423,41 @@ def convert_batch_to_image_grid(image_batch):
 f = plt.figure(figsize=(16,8))
 ax = f.add_subplot(2,3,1)
 ax.imshow(convert_batch_to_image_grid(train_originals),
-          interpolation='nearest', cmap='gray_r')
+interpolation='nearest', cmap='gray_r')
 ax.set_title('training data originals')
 plt.axis('off')
 
 ax = f.add_subplot(2,3,2)
 ax.imshow(convert_batch_to_image_grid(train_reconstructions),
-          interpolation='nearest', cmap='gray_r')
+interpolation='nearest', cmap='gray_r')
 ax.set_title('training data reconstructions')
 plt.axis('off')
 
 ax = f.add_subplot(2,3,3)
 ax.imshow(convert_batch_to_image_grid(train_de_reconstructions),
-          interpolation='nearest', cmap='gray_r')
+interpolation='nearest', cmap='gray_r')
 ax.set_title('training data reconstructions without noise/psf')
 plt.axis('off')
 
 ax = f.add_subplot(2,3,4)
 ax.imshow(convert_batch_to_image_grid(valid_originals),
-          interpolation='nearest', cmap='gray_r')
+interpolation='nearest', cmap='gray_r')
 ax.set_title('validation data originals')
 plt.axis('off')
 
 ax = f.add_subplot(2,3,5)
 ax.imshow(convert_batch_to_image_grid(valid_reconstructions),
-          interpolation='nearest', cmap='gray_r')
+interpolation='nearest', cmap='gray_r')
 ax.set_title('validation data reconstructions')
 plt.axis('off')
 
 ax = f.add_subplot(2,3,6)
 ax.imshow(convert_batch_to_image_grid(valid_de_reconstructions),
-          interpolation='nearest', cmap='gray_r')
+interpolation='nearest', cmap='gray_r')
 ax.set_title('validation data reconstructions without noise/psf')
 plt.axis('off')
 
-plt.savefig('reconstruction_noise+psf.eps')
-
+plt.savefig(output_PATH + 'reconstruction_noise+psf.eps')
+'''
 #timer
 print('\n', '## CODE RUNTIME:', time.time()-Tstart) #Timer end
