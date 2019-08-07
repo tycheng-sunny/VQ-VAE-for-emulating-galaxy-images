@@ -57,7 +57,10 @@
   <img src="https://github.com/tycheng-sunny/Project_Kavli_UCSC_2019/blob/master/images/generated_imgs_pixelcnn_candels_100000.png" width=400>
   </p>
   
-  - CANDELS result (deconvolution and denoise)
+  - CANDELS result (deconvolution)
+  <p align="center">
+  <img src="https://github.com/tycheng-sunny/Project_Kavli_UCSC_2019/blob/master/images/generated_imgs_pixelcnn_psf_100000.png" width=800>
+  </p>
 
   - SDSS result (K=512)
   <p align="center">
