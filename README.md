@@ -3,13 +3,12 @@
 
 ## What do we want to do?
  In this project, we are exploring the usage of VQ-VAE ([1](https://arxiv.org/abs/1711.00937)) ([2](https://arxiv.org/pdf/1906.00446.pdf)) to two ideas:
- - Unsupervised machine learning (clustering) to explore the morphology of galaxies
  - Emulating galaxy images (without noise/psf) to adapt to other surveys using generative models (e.g. PixelCNN)
+ - Unsupervised machine learning (clustering) to explore the morphology of galaxies (**has been moved to another repo**)
  
  We modified the [VQ-VAE example](https://github.com/deepmind/sonnet/blob/master/sonnet/examples/vqvae_example.ipynb) ([Source code of VQ-VAE](https://github.com/deepmind/sonnet/blob/master/sonnet/python/modules/nets/vqvae.py)) from Sonnet library.
  
 ## Preliminary results
-**@NOTE: Need to assign an output directory when using codes**
 ### VQ-VAE code on CANDELS data
  ```
  $python image_to_dict.py
@@ -50,31 +49,18 @@
   
   I followed the code from [hiwonjoon](https://github.com/hiwonjoon/tf-vqvae) which tried to reproduce the results of the paper - VQ-VAE ([2](https://arxiv.org/pdf/1906.00446.pdf)). They applied the code of [Gated PixelCNN](https://github.com/anantzoid/Conditional-PixelCNN-decoder/tree/9a5c9a3df2c58100cf5e3600392e67db8ac7a59e) on the vector quantized feature map extracted from VQ-VAE.
   
-  I trained PixelCNN (**unconditional**) 100000 epoches on both CANDELS (84x84) (~7000 images) and SDSS (64x64) (~170000 images), and sample the prior to generate new feature map. I then use the decoder from VQ-VAE to reconstruct new images from generated feature maps.
-  
-  - CANDELS result
-  <p align="center">
-  <img src="https://github.com/tycheng-sunny/Project_Kavli_UCSC_2019/blob/master/images/generated_imgs_pixelcnn_candels_100000.png" width=400>
-  </p>
+  I trained PixelCNN (**unconditional**) 100000 epoches on both CANDELS (84x84) (~7000 images) and sample the prior to generate new feature map. I then use a pre-trained decoder to reconstruct new images from generated feature maps.
   
   - CANDELS result (deconvolution)
   <p align="center">
   <img src="https://github.com/tycheng-sunny/Project_Kavli_UCSC_2019/blob/master/images/generated_imgs_pixelcnn_psf_100000.png" width=800>
   </p>
-
-  - SDSS result (K=512)
-  <p align="center">
-  <img src="https://github.com/tycheng-sunny/Project_Kavli_UCSC_2019/blob/master/images/generated_imgs_pixelcnn_sdss_100000.png" width=400>
-  </p>
-  
-### Unsupervised clustering
  
 ## To-do list
  - [x] Adapt the VQ-VAE code to astronomical images (e.g. CANDELS)
  - [x] Add noise/PSF layers before output and retrieve the reconstructed images from the layer before noise/PSF layers
  - [x] Connect with PixelCNN to generate random galaxy images
  - [x] SDSS data
+ - [x] Conditional to what labels? --> we condition on T-Type at the moment.
  - [ ] t-SNE to explore the meaning of quantized vector and compare with galaxy properties
- - [ ] Download the images fro 3DHST/CANDELS and cropping them (currently using the CANDELS data from Ryan)
- - [ ] Conditional to what labels? --> how to do conditional?
- - [ ] Examination......?
+ - [ ] Examination
